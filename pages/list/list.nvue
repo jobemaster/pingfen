@@ -1,0 +1,984 @@
+<template>
+	<view class="pages">
+		<!-- #ifndef H5 -->
+		<statusBar></statusBar>
+		<!-- #endif -->
+		<!-- 搜索功能 -->
+		<view class="uni-search-box">
+			<uni-search-bar v-model="keyword" ref="searchBar" radius="100" cancelButton="none" disabled
+				:placeholder="inputPlaceholder" />
+			<view class="cover-search-bar" @click="searchClick"></view>
+		</view>
+
+		<!-- 公告栏和排行榜入口 -->
+		<view class="notice-rank-container">
+			<view class="notice-section">
+				<uni-notice-bar scrollable single text="评分满分为五,为心目中最美的景点点赞"></uni-notice-bar>
+			</view>
+			<view class="rank-button" @click="toggle('center')">
+				<uni-icons type="medal" size="24" color="#007AFF"></uni-icons>
+			</view>
+		</view>
+
+		<view class="uni-margin-wrap">
+			<swiper class="swiper" circular :indicator-dots="true" :autoplay="true" :interval="2000" :duration="500">
+				<swiper-item>
+					<image class="pic" src="../../static/55a06a03ddf2ef8b34fc1df37ae91b7.png"></image>
+				</swiper-item>
+				<swiper-item>
+					<image class="pic" src="../../static/7c14d9837cbf9794e09266c71dc6d90.png"></image>
+				</swiper-item>
+				<swiper-item>
+					<image class="pic" src="../../static/a0048d2ede6bfc217d1a20f25c395be.png"></image>
+				</swiper-item>
+			</swiper>
+		</view>
+
+		<!-- 排行榜弹窗 -->
+		<uni-popup ref="popup" type="center" background-color="#fff" @change="change">
+			<view class="rank-popup">
+				<view class="rank-title">
+					<text class="rank-title-text">景点排行榜</text>
+					<uni-icons type="closeempty" size="20" color="#666" @click="closePopup"
+						class="close-icon"></uni-icons>
+				</view>
+				<view class="rank-table">
+					<!-- 表头 -->
+					<view class="table-header">
+						<text class="header-cell rank-cell">名次</text>
+						<text class="header-cell name-cell">景点名称</text>
+						<text class="header-cell score-cell">评分</text>
+						<text class="header-cell count-cell">评分次数</text>
+					</view>
+					<!-- 表格内容 -->
+					<view v-for="(item, index) in scores.slice(0, 3)" :key="index" class="table-row"
+						@click="onClick(item.article_id, item.article_title)">
+						<view class="rank-cell">
+							<uni-icons :type="'medal-filled'" :size="24"
+								:color="index === 0 ? '#FFD700' : index === 1 ? '#C0C0C0' : '#CD7F32'">
+							</uni-icons>
+						</view>
+						<text class="name-cell">{{item.article_title}}</text>
+						<text class="score-cell">{{item.totalScore.toFixed(1)}}</text>
+						<text class="count-cell">{{item.totalPerson}}</text>
+					</view>
+				</view>
+			</view>
+		</uni-popup>
+
+		<div class="button-group">
+			<button class="filter-button" :class="{ active: attribute === 0 }" @click="cli0">全部</button>
+			<button class="filter-button" :class="{ active: attribute === 1 }" @click="cli1">正常景观</button>
+			<button class="filter-button" :class="{ active: attribute === 2 }" @click="cli2">非常景观</button>
+		</div>
+
+		<unicloud-db ref='udb' v-slot:default="{data, pagination, hasMore, loading, error, options}"
+			@error="onqueryerror" @load="loadData" :collection="colList" :page-size="pageSize"
+			:page-current="currentPage" :getcount="true" orderby="_id desc">
+			<uni-list class="uni-list" :border="false" :style="{height:listHight}">
+				<!-- #ifdef APP-NVUE -->
+				<refreshBox @refresh="refresh" :loading="loading"></refreshBox>
+				<!-- #endif -->
+
+				<!-- 列表渲染 -->
+				<uni-list-item v-for="(item,index) in data" :key="index"
+					:to="'/pages/list/detail?id='+item._id+'&title='+item.title" class="list-item">
+					<template v-slot:header>
+						<view class="item-left">
+							<image class="item-image" :src="item.avatar" mode="aspectFill"></image>
+							<text class="item-title">{{item.title}}</text>
+						</view>
+					</template>
+					<template v-slot:body>
+						<view class="item-right">
+							<view class="item-rating">
+								<text class="rating-count">{{item.number || 0}}条评价</text>
+								<text class="score-text">{{item.value ? item.value.toFixed(1) : '0.0'}}分</text>
+							</view>
+							<text
+								class="item-desc">{{ item.content.length > 50 ? item.content.slice(0, 50) + '...' : item.content }}</text>
+						</view>
+					</template>
+				</uni-list-item>
+
+				<!-- 分页器 -->
+				<view class="pagination-container">
+					<uni-pagination :total="pagination.total" :pageSize="pageSize" :current="currentPage"
+						@change="handlePageChange" showIcon="true"></uni-pagination>
+				</view>
+			</uni-list>
+		</unicloud-db>
+
+		<!-- 添加文章按钮 -->
+		<view class="add-button" @click="showAddArticle">
+			<uni-icons type="plus" size="24" color="#fff"></uni-icons>
+		</view>
+
+		<!-- 添加文章弹窗 -->
+		<uni-popup ref="addArticlePopup" type="center" background-color="#fff">
+			<view class="article-form">
+				<view class="form-header">
+					<text class="form-title">添加新景点</text>
+					<uni-icons type="closeempty" size="20" color="#666" @click="closeAddArticle"
+						class="close-icon"></uni-icons>
+				</view>
+				<view class="form-content">
+					<view class="form-item">
+						<text class="form-label">景点名称</text>
+						<input class="form-input" v-model="newArticle.title" placeholder="请输入景点名称" />
+					</view>
+					<view class="form-item">
+						<text class="form-label">景点详述</text>
+						<textarea class="form-textarea" v-model="newArticle.content" placeholder="请输入景点的详细描述" />
+					</view>
+					<view class="form-item">
+						<text class="form-label">景观类型</text>
+						<view class="attribute-selector">
+							<button class="attribute-btn" :class="{ active: newArticle.attribute === 1 }"
+								@click="newArticle.attribute = 1">正常景观</button>
+							<button class="attribute-btn" :class="{ active: newArticle.attribute === 2 }"
+								@click="newArticle.attribute = 2">非常景观</button>
+						</view>
+					</view>
+					<view class="form-item">
+						<text class="form-label">景点图片</text>
+						<view class="image-upload-area">
+							<uni-file-picker v-model="newArticle.avatar" file-mediatype="image" mode="grid"
+								@select="handleSelect" @delete="handleDelete" :image-styles="imageStyles"
+								limit="1"></uni-file-picker>
+						</view>
+					</view>
+					<button class="submit-button" @click="submitArticle">提交景点</button>
+				</view>
+			</view>
+		</uni-popup>
+	</view>
+</template>
+
+<style lang="scss" scoped>
+	/* #ifndef APP-NVUE */
+	view {
+		display: flex;
+		box-sizing: border-box;
+		flex-direction: column;
+	}
+
+	/* #endif */
+
+	.pages {
+		background-color: #f8f8f8;
+	}
+
+	.uni-search-box {
+		background-color: #FFFFFF;
+		padding: 20rpx;
+		border-bottom: 1rpx solid #eee;
+		position: sticky;
+		top: 0;
+		z-index: 99;
+	}
+
+	/* 公告栏和排行榜容器 */
+	.notice-rank-container {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding: 0 20rpx;
+		background: linear-gradient(45deg, #007AFF, #1cbbb4);
+	}
+
+	.notice-section {
+		flex: 1;
+	}
+
+	.notice-section :deep(.uni-noticebar) {
+		background-color: transparent;
+		padding: 0;
+	}
+
+	.notice-section :deep(.uni-noticebar__content-text) {
+		color: #fff;
+	}
+
+	.rank-button {
+		width: 80rpx;
+		height: 80rpx;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		background-color: rgba(255, 255, 255, 0.2);
+		border-radius: 50%;
+		margin-left: 20rpx;
+	}
+
+	/* 排行榜弹窗样式 */
+	.rank-popup {
+		width: 680rpx;
+		background-color: #fff;
+		border-radius: 20rpx;
+		padding: 30rpx;
+	}
+
+	.rank-title {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 30rpx;
+	}
+
+	.rank-title-text {
+		font-size: 32rpx;
+		font-weight: bold;
+		color: #333;
+	}
+
+	.close-icon {
+		padding: 10rpx;
+	}
+
+	.rank-table {
+		width: 100%;
+	}
+
+	.table-header {
+		display: flex;
+		flex-direction: row;
+		background-color: #f8f8f8;
+		padding: 20rpx;
+		border-radius: 10rpx;
+		margin-bottom: 20rpx;
+	}
+
+	.table-row {
+		display: flex;
+		flex-direction: row;
+		padding: 20rpx;
+		border-bottom: 1rpx solid #eee;
+		align-items: center;
+	}
+
+	.table-row:hover {
+		background-color: #f5f5f5;
+	}
+
+	.header-cell {
+		font-size: 28rpx;
+		color: #666;
+		font-weight: bold;
+		text-align: center;
+	}
+
+	.rank-cell {
+		flex: 1;
+		display: flex;
+		justify-content: center;
+		align-items: center;
+	}
+
+	.name-cell {
+		flex: 3;
+		font-size: 28rpx;
+		color: #333;
+		text-align: left;
+		padding: 0 20rpx;
+	}
+
+	.score-cell {
+		flex: 1;
+		font-size: 36rpx;
+		color: #007AFF;
+		font-weight: bold;
+		text-align: right;
+		padding-right: 30rpx;
+	}
+
+	.count-cell {
+		flex: 1;
+		font-size: 28rpx;
+		color: #666;
+		text-align: center;
+	}
+
+	/* 筛选按钮组 */
+	.button-group {
+		display: flex;
+		justify-content: center;
+		gap: 20rpx;
+		padding: 20rpx;
+	}
+
+	.filter-button {
+		padding: 12rpx 30rpx;
+		border-radius: 30rpx;
+		background-color: #f5f5f5;
+		color: #666;
+		font-size: 26rpx;
+		border: none;
+		transition: all 0.3s ease;
+	}
+
+	.filter-button.active {
+		background-color: #007AFF;
+		color: #fff;
+	}
+
+	/* 列表样式 */
+	.list-item {
+		margin: 15rpx 20rpx;
+		border-radius: 12rpx;
+		background-color: #ffffff;
+		box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.05);
+		overflow: hidden;
+	}
+
+	.item-left {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		width: 240rpx;
+	}
+
+	.item-image {
+		width: 220rpx;
+		height: 220rpx;
+		border-radius: 8rpx;
+		margin-bottom: 10rpx;
+	}
+
+	.item-title {
+		font-size: 32rpx;
+		font-weight: bold;
+		color: #333;
+		text-align: center;
+		width: 100%;
+		padding: 0 10rpx;
+	}
+
+	.item-right {
+		flex: 1;
+		padding: 15rpx 20rpx;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.item-rating {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: flex-end;
+		margin-bottom: 15rpx;
+	}
+
+	.rating-count {
+		font-size: 28rpx;
+		color: #666;
+		margin-right: 20rpx;
+	}
+
+	.score-text {
+		font-size: 40rpx;
+		font-weight: bold;
+		color: #007AFF;
+	}
+
+	.item-desc {
+		font-size: 26rpx;
+		color: #666;
+		line-height: 1.5;
+	}
+
+	/* 轮播图样式 */
+	.uni-margin-wrap {
+		margin: 20rpx;
+		border-radius: 12rpx;
+		overflow: hidden;
+		box-shadow: 0 2rpx 12rpx rgba(0, 0, 0, 0.1);
+	}
+
+	.swiper {
+		height: 300rpx;
+	}
+
+	.pic {
+		width: 100%;
+		height: 100%;
+		border-radius: 12rpx;
+	}
+
+	/* 分页器样式 */
+	.pagination-container {
+		padding: 30rpx;
+		display: flex;
+		justify-content: center;
+		background-color: #fff;
+	}
+
+	/* 添加文章按钮样式 */
+	.add-button {
+		position: fixed;
+		right: 30rpx;
+		bottom: 120rpx;
+		width: 100rpx;
+		height: 100rpx;
+		background: linear-gradient(45deg, #007AFF, #1cbbb4);
+		border-radius: 50%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.2);
+		z-index: 99;
+	}
+
+	/* 文章表单样式 */
+	.article-form {
+		width: 680rpx;
+		background-color: #fff;
+		border-radius: 20rpx;
+		padding: 30rpx;
+	}
+
+	.form-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 30rpx;
+	}
+
+	.form-title {
+		font-size: 32rpx;
+		font-weight: bold;
+		color: #333;
+	}
+
+	.form-content {
+		display: flex;
+		flex-direction: column;
+		gap: 15rpx;
+	}
+
+	.form-item {
+		margin-bottom: 15rpx;
+	}
+
+	.form-label {
+		font-size: 28rpx;
+		color: #666;
+	}
+
+	.form-input {
+		height: 80rpx;
+		padding: 0 20rpx;
+		border: 1rpx solid #eee;
+		border-radius: 8rpx;
+		font-size: 28rpx;
+	}
+
+	.form-textarea {
+		height: 200rpx;
+		padding: 20rpx;
+		border: 1rpx solid #eee;
+		border-radius: 8rpx;
+		font-size: 28rpx;
+	}
+
+	.submit-button {
+		margin-top: 20rpx;
+		margin-bottom: 20rpx;
+		height: 80rpx;
+		background: linear-gradient(45deg, #007AFF, #1cbbb4);
+		color: #fff;
+		border-radius: 40rpx;
+		font-size: 32rpx;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border: none;
+	}
+
+	.submit-button:active {
+		opacity: 0.8;
+	}
+
+	.attribute-selector {
+		display: flex;
+		flex-direction: row;
+		gap: 20rpx;
+		margin-top: 10rpx;
+	}
+
+	.attribute-btn {
+		flex: 1;
+		padding: 20rpx;
+		border-radius: 8rpx;
+		background-color: #f5f5f5;
+		color: #666;
+		font-size: 28rpx;
+		border: none;
+	}
+
+	.attribute-btn.active {
+		background-color: #007AFF;
+		color: #fff;
+	}
+
+	.image-upload-area {
+		margin: 10rpx 0;
+		width: 100%;
+	}
+
+	:deep(.uni-file-picker__container) {
+		justify-content: flex-start !important;
+	}
+
+	:deep(.uni-file-picker__lists) {
+		margin-top: 0 !important;
+		margin-bottom: 0 !important;
+	}
+
+	:deep(.file-picker__box-content) {
+		width: 80rpx !important;
+		height: 80rpx !important;
+	}
+
+	.upload-tip {
+		font-size: 24rpx;
+		color: #999;
+		margin-top: 10rpx;
+	}
+
+	.image-styles {
+		width: 80rpx;
+		height: 80rpx;
+		border-radius: 8rpx;
+		border: 1rpx solid #eee;
+	}
+
+	/* 表单项样式优化 */
+	.form-item {
+		margin-bottom: 30rpx;
+	}
+
+	.form-label {
+		font-size: 28rpx;
+		color: #333;
+		margin-bottom: 10rpx;
+		font-weight: bold;
+	}
+
+	.form-input,
+	.form-textarea {
+		width: 100%;
+		padding: 20rpx;
+		border: 1rpx solid #eee;
+		border-radius: 8rpx;
+		font-size: 28rpx;
+		background-color: #fff;
+	}
+
+	.form-textarea {
+		height: 200rpx;
+	}
+</style>
+
+<script>
+	let cdbRef;
+	import statusBar from "@/uni_modules/uni-nav-bar/components/uni-nav-bar/uni-status-bar";
+
+	import Gps from '@/uni_modules/json-gps/js_sdk/gps.js';
+	const gps = new Gps(),
+		db = uniCloud.database();
+
+	export default {
+		components: {
+			statusBar
+		},
+		computed: {
+			inputPlaceholder(e) {
+				if (uni.getStorageSync('CURRENT_LANG') == "en") {
+					return 'Please enter the search content'
+				} else {
+					return '请输入搜索内容'
+				}
+			},
+			colList() {
+				return [
+					db.collection('opendb-news-articles').where(this.where).field(
+						'avatar,title,last_modify_date,user_id,content,value,number')
+					.orderBy('_id', 'desc')
+					.getTemp(),
+					db.collection('uni-id-users').field('_id,nickname').getTemp()
+				]
+			}
+		},
+		data() {
+			return {
+				type: 'center',
+				where: '"article_status" == 1',
+				keyword: "",
+				showRefresh: false,
+				listHight: 0,
+				person: 0,
+				scores: [], // 用于存储查询结果
+				url: "",
+				attribute: 0, //表示显示全部
+				currentPage: 1, // 当前页码
+				pageSize: 10, // 每页显示数量
+				total: 0, // 总数据量
+				// 新增文章表单数据
+				newArticle: {
+					title: '',
+					content: '',
+					avatar: [],
+					attribute: 1,
+					number: 0,
+					value: 0
+				},
+				imageStyles: {
+					width: 80,
+					height: 80,
+					border: {
+						color: '#eee',
+						width: '1px',
+						style: 'solid',
+
+						radius: '8px'
+					}
+				}
+			}
+		},
+		watch: {
+			keyword(keyword, oldValue) {
+				let where = '"article_status" == 1 '
+				if (keyword) {
+					this.where = where + `&& /${keyword}/.test(title)`;
+				} else {
+					this.where = where;
+				}
+			}
+		},
+		async onReady() {
+			// #ifdef APP-NVUE
+			/* 可用窗口高度 - 搜索框高 - 状态栏高 */
+			this.listHight = uni.getSystemInfoSync().windowHeight - uni.getSystemInfoSync().statusBarHeight - 50 +
+				'px';
+			// #endif
+			// #ifndef APP-NVUE
+			this.listHight = 'auto'
+			// #endif
+			cdbRef = this.$refs.udb
+		},
+		async onShow() {
+			this.getScores();
+			this.keyword = getApp().globalData.searchText
+			getApp().globalData.searchText = ''
+			//这里仅演示如何，在onShow生命周期获取设备位置，在设备或者应用没有权限时自动导。设置毕自动重新获取。
+			//你可以基于他做自己的业务，比如根据距离由近到远排序列表数据等
+			// uni.showLoading({
+			// 	title:"��取定位中"
+			// });
+			//默认h5端不获取定位
+			// #ifndef H5 || APP-HARMONY
+			let location = await gps.getLocation({
+				geocode: true
+			})
+			console.log(location);
+			// #endif
+			// if(location){
+			// 	uni.showToast({
+			// 		title: JSON.stringify(location),
+			// 		icon: 'none'
+			// 	});
+			// }
+			// uni.hideLoading()
+		},
+		methods: {
+			async getScores() {
+				try {
+					const res = await uniCloud.database().collection('guestbook')
+						.groupBy('article_id ,article_title')
+						.groupField('avg(value) as totalScore,count(*) as totalPerson')
+						.get();
+					this.scores = res.result.data;
+					this.scores.forEach(async (item) => {
+						await db.collection('opendb-news-articles')
+							.doc(item.article_id) // 使用 article_id 定位到具体的文档
+							.update({
+								number: item.totalPerson, // 更新 totalPerson
+								value: item.totalScore // 更新 totalScore
+							});
+					});
+					// 将查询结果存储到页面的 data 中
+				} catch (error) {
+					console.error("查询失败:", error);
+				}
+			},
+			toggle(type) {
+				this.type = type
+				// open 方法入参 同在 uni-popup 组件上绑定 type属性
+				this.$refs.popup.open(type)
+			},
+			change() {
+				this.scores.sort(function(a, b) {
+					return b.totalScore - a.totalScore;
+				});
+				this.scores.forEach(function(item) {
+					item.totalScore = Math.round(item.totalScore * 100) / 100;
+				});
+			},
+			onClick(id, title) {
+				const targetUrl = `/pages/list/detail?id=${id}&title=${title}`; // 定义 url
+				// console.log(targetUrl);
+				uni.navigateTo({
+					url: targetUrl
+					// "'/pages/list/detail?id='+item._id+'&title='+item.title"
+				});
+			},
+			cli0() {
+				this.attribute = 0;
+				this.fetchArticles();
+				console.log(this.attribute);
+			},
+			cli1() {
+				this.attribute = 1;
+				this.fetchArticles();
+				console.log(this.attribute);
+			},
+			cli2() {
+				this.attribute = 2;
+				this.fetchArticles();
+				console.log(this.attribute);
+			},
+			fetchArticles() {
+				// 这里假设你有一个方法根据 attribute 获取对应的文章
+				// 你可以根据这值来构建请求的查询条件，例如：
+				if (this.attribute === 0) {
+					this.where = '"article_status" == 1 &&("attribute" == 1 || "attribute" == 2)'; // 全部
+				} else if (this.attribute === 1) {
+					this.where = '"article_status" == 1 && "attribute" == 1'; // 正常景观
+				} else if (this.attribute === 2) {
+					this.where = '"article_status" == 1 && "attribute" == 2'; // 非常景观
+				}
+			},
+			searchClick(e) { //点击搜索框
+				uni.hideKeyboard();
+				uni.navigateTo({
+					url: '/pages/list/search/search',
+					animationType: 'fade-in'
+				});
+			},
+			retry() {
+				this.refresh()
+			},
+			refresh() {
+				this.currentPage = 1;
+				this.$refs.udb.loadData({
+					clear: true
+				}, () => {
+					uni.stopPullDownRefresh()
+					this.showRefresh = false
+					console.log('refresh completed');
+				})
+			},
+			loadMore() {
+				cdbRef.loadMore()
+			},
+			onqueryerror(e) {
+				console.error(e);
+			},
+			onpullingdown(e) {
+				console.log(e);
+				this.showRefresh = true
+				if (e.pullingDistance > 100) {
+					this.refresh()
+				}
+			},
+			// 处理分页变化
+			handlePageChange(e) {
+				this.currentPage = e.current;
+				this.$refs.udb.loadData({
+					clear: true
+				});
+			},
+
+			// 加载数据时更新总数
+			loadData(data, ended) {
+				if (data.length) {
+					this.total = this.$refs.udb.dataList.length;
+				}
+			},
+			closePopup() {
+				this.$refs.popup.close()
+			},
+			// 显示添加文章弹窗
+			showAddArticle() {
+				this.$refs.addArticlePopup.open('center')
+			},
+
+			// 关闭添加文章弹窗
+			closeAddArticle() {
+				this.$refs.addArticlePopup.close();
+				// 清空表单
+				this.newArticle = {
+					title: '',
+					content: '',
+					avatar: [],
+					attribute: 1,
+					number: 0,
+					value: 0
+				};
+			},
+
+			// 添加图片预览方法
+			previewImage(fileId) {
+				if (!fileId) return;
+				// 将 fileId 转换为可访问的 URL
+				uniCloud.getTempFileURL({
+					fileList: [fileId]
+				}).then(res => {
+					if (res.fileList && res.fileList[0] && res.fileList[0].tempFileURL) {
+						uni.previewImage({
+							urls: [res.fileList[0].tempFileURL],
+							current: 0
+						});
+					}
+				}).catch(err => {
+					console.error('获取图片URL失败：', err);
+				});
+			},
+
+			// 处理文件选择
+			async handleSelect(e) {
+				try {
+					if (!e.tempFiles || !e.tempFiles.length) {
+						return;
+					}
+
+					uni.showLoading({
+						title: '上传中...'
+					});
+
+					const file = e.tempFiles[0];
+
+					// 处理文件路径
+					const filePath = file.path || (file.file && file.file.path) || file.url;
+					if (!filePath) {
+						throw new Error('无法获取文件路径');
+					}
+
+					const extension = file.name.split('.').pop();
+					const cloudPath = `articles/${Date.now()}-${Math.random().toString(36).slice(-6)}.${extension}`;
+
+					const result = await uniCloud.uploadFile({
+						filePath: filePath,
+						cloudPath: cloudPath
+					});
+
+					// 更新 newArticle.avatar 数组
+					this.newArticle.avatar = [result.fileID];
+
+					uni.hideLoading();
+					uni.showToast({
+						title: '上传成功',
+						icon: 'success'
+					});
+				} catch (error) {
+					uni.hideLoading();
+					uni.showToast({
+						title: '上传失败',
+						icon: 'error'
+					});
+					console.error('上传失败：', error);
+				}
+			},
+
+			// 处理文件删除
+			handleDelete(e) {
+				const index = e.index;
+				if (index !== undefined && this.newArticle.avatar[index]) {
+					// 从云存储中删除文件
+					uniCloud.deleteFile({
+						fileList: [this.newArticle.avatar[index]],
+						success: (res) => {
+							console.log('文件删除成功:', res);
+							// 从数组中移除
+							this.newArticle.avatar.splice(index, 1);
+						},
+						fail: (err) => {
+							console.error('文件删除失败:', err);
+						}
+					});
+				}
+			},
+
+			// 修改提交方法
+			async submitArticle() {
+				if (!this.newArticle.title.trim()) {
+					uni.showToast({
+						title: '请输入景点名称',
+						icon: 'none'
+					});
+					return;
+				}
+
+				if (!this.newArticle.content.trim()) {
+					uni.showToast({
+						title: '请输入景点详述',
+						icon: 'none'
+					});
+					return;
+				}
+
+				if (!this.newArticle.avatar || !this.newArticle.avatar.length) {
+					uni.showToast({
+						title: '请上传景点图片',
+						icon: 'none'
+					});
+					return;
+				}
+
+				try {
+					uni.showLoading({
+						title: '提交中...'
+					});
+
+					// 只提交必要的字段
+					const articleData = {
+						title: this.newArticle.title,
+						content: this.newArticle.content,
+						avatar: this.newArticle.avatar[0],
+						attribute: this.newArticle.attribute,
+						number: 0,
+						value: 0,
+						article_status: 1
+					};
+
+					const result = await db.collection('opendb-news-articles').add(articleData);
+
+					uni.hideLoading();
+					uni.showToast({
+						title: '提交成功',
+						icon: 'success'
+					});
+
+					this.closeAddArticle();
+					this.refresh();
+				} catch (error) {
+					uni.hideLoading();
+					uni.showToast({
+						title: '提交失败',
+						icon: 'error'
+					});
+					console.error('提交失败：', error);
+				}
+			}
+		},
+		// #ifndef APP-NVUE
+		onPullDownRefresh() {
+			this.refresh()
+		},
+		onReachBottom() {
+			this.loadMore()
+		}
+		// #endif
+	}
+</script>

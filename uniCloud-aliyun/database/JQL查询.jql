@@ -1,0 +1,4 @@
+db.collection('guestbook')
+	.groupBy('article_id', 'article_title')
+	.groupField('avg(value) as totalScore,count(*) as totalPerson')
+	.get();

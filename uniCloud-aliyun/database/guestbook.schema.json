@@ -1,0 +1,53 @@
+// 文档教程: https://uniapp.dcloud.net.cn/uniCloud/schema
+{
+	"bsonType": "object",
+	"required": ["text", "article_id", "user_id", "value"],
+	"permission": {
+		"read": true,
+		// "create": "auth.uid != null && get(`database.opendb-news-articles.${doc.article_id}`).comment_status == 1",
+		"create": "auth.uid!=null",
+		"update": "doc.user_id == auth.uid",
+		"delete": "doc.user_id == auth.uid"
+	},
+	"properties": {
+		"_id": {
+			"description": "ID，系统自动生成"
+		},
+		"text": {
+			"description": "用户发出的内容",
+			"bsonType": "string"
+		},
+		"user_id": {
+			"foreignKey": "uni-id-users._id", // guestbook通过user_id这个字段和uni-id-users用户表的_id建立主表和外表关联
+			"bsonType": "string",
+			"description": "用户ID",
+			"forceDefaultValue": {
+				"$env": "uid"
+			} //用户id应该使用强制默认值（当前登录用户）而不是用户自己手动设置并提交
+		},
+		"article_id": {
+			"bsonType": "string",
+			"description": "文章ID，opendb-news-articles 表中的`_id`字段",
+			"foreignKey": "opendb-news-articles._id"
+		},
+		"article_title": {
+			"bsonType": "string",
+			"description": "文章的标题,opendb-news-articles表中_id字段",
+			"foreignKey": "opendb-news-articles.title"
+		},
+		"value": {
+			"bsonType": "int",
+			"description": "评分0-5"
+		},
+		"photo": {
+			"bsonType": "array",
+			"description": "用户上传的图片",
+			"items": {
+				"bsonType": "string",
+				"description": "图片的URL地址或文件路径"
+			},
+			"minItems": 0,
+			"maxItems": 6
+		}
+	}
+}
